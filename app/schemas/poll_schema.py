@@ -1,9 +1,7 @@
 
 
 from typing import Annotated
-from pydantic import StringConstraints
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, Field, StringConstraints
 
 
 class PollCreate(BaseModel):
@@ -11,9 +9,10 @@ class PollCreate(BaseModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1)
     ]
+
     options: list[
         Annotated[
             str,
             StringConstraints(strip_whitespace=True, min_length=1)
-    ]
-] = Field(min_length=2)
+        ]
+    ] = Field(min_length=2)

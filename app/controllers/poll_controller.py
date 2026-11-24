@@ -3,7 +3,6 @@
 
 
 from fastapi import APIRouter, HTTPException
-from app.services import poll_service
 from app.schemas.poll_schema import PollCreate
 from app.schemas.vote_schema import VoteCreate
 from app.services import poll_service
@@ -75,7 +74,7 @@ async def delete_vote(user_id: int, poll_id: int):
     )
 
 
-@router.get("/polls/{poll_id}/vote=count")
+@router.get("/polls/{poll_id}/vote-count")
 async def get_poll_vote_count(poll_id: int):
     return await poll_service.get_poll_vote_count(poll_id)
 

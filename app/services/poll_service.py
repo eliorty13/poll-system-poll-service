@@ -196,6 +196,14 @@ async def create_vote(user_id: int, poll_id: int, option_id: int):
 
 
 async def update_vote(user_id: int, poll_id: int, option_id: int):
+    existing_poll = await poll_repository.get_poll_by_id(poll_id)
+
+    if existing_poll is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Poll not found"
+        )
+
     option = await poll_repository.get_option_by_id(
         poll_id=poll_id,
         option_id=option_id
