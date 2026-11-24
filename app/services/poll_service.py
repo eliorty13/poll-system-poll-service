@@ -8,22 +8,45 @@ import httpx
 from app.config import Config
 
 
+
 async def get_all_polls():
     polls = await poll_repository.get_all_polls()
-    return polls
+
+    all_polls = []
+
+    for poll in polls:
+        poll_id = poll["poll_id"]
+
+        options = await poll_repository.get_options_by_poll_id(poll_id)
+
+        all_polls.append({
+            "poll_id": poll_id,
+            "question_title": poll["question_title"],
+            "options": [dict(option) for option in options]
+        })
+
+    return all_polls
+
 
 
 async def create_poll(poll_data):
+    normalized_options = []
+
+    for option in poll_data.options:
+        normalized_options.append(option.lower())
+
+    if len(normalized_options) != len(set(normalized_options)):
+        raise ValueError("Poll options must be unique")
+
     poll_id = await poll_repository.create_poll(
         question_title=poll_data.question_title,
-        first_option=poll_data.first_option,
-        second_option=poll_data.second_option,
-        third_option=poll_data.third_option,
-        fourth_option=poll_data.fourth_option
+        options=poll_data.options
     )
 
-    return {"poll_id": poll_id, "message": "Poll created successfully"}
-
+    return {
+        "poll_id": poll_id,
+        "message": "Poll created successfully"
+    }
 
 async def get_poll_by_id(poll_id: int):
     poll = await poll_repository.get_poll_by_id(poll_id)
@@ -34,7 +57,15 @@ async def get_poll_by_id(poll_id: int):
             detail="Poll not found"
         )
 
-    return poll
+    options = await poll_repository.get_options_by_poll_id(poll_id)
+
+
+    return {
+        "poll_id": poll["poll_id"],
+        "question_title": poll["question_title"],
+        "options": [dict(option) for option in options]
+    }
+
 
 
 async def update_poll(poll_id: int, poll_data):
@@ -53,6 +84,13 @@ async def update_poll(poll_id: int, poll_data):
             status_code=409,
             detail="Cannot update a poll that already has votes"
         )
+    normalized_options = []
+
+    for option in poll_data.options:
+        normalized_options.append(option.lower())
+
+    if len(normalized_options) != len(set(normalized_options)):
+        raise ValueError("Poll options must be unique")
 
     await poll_repository.update_poll(poll_id, poll_data)
 
@@ -97,14 +135,28 @@ async def check_user_registration(user_id: int):
         return user_data.get("is_registered") == 1
 
 
-async def create_vote(user_id: int, poll_id: int, selected_option: int):
+async def create_vote(user_id: int, poll_id: int, option_id: int):
+
+    existing_poll = await poll_repository.get_poll_by_id(poll_id)
+
+    if existing_poll is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Poll not found"
+        )
 
 
-    if selected_option < 1 or selected_option > 4:
+    option = await poll_repository.get_option_by_id(
+        poll_id=poll_id,
+        option_id=option_id
+    )
+
+    if option is None:
         raise HTTPException(
             status_code=400,
-            detail ="Selected option must be between 1 and 4"
+            detail="Invalid option for this poll"
         )
+
 
     is_registered = await check_user_registration(user_id)
 
@@ -127,42 +179,33 @@ async def create_vote(user_id: int, poll_id: int, selected_option: int):
         )
 
 
-
-    existing_vote = await poll_repository.get_vote_by_user_and_poll(
-        user_id=user_id,
-        poll_id=poll_id
-    )
-
-    if existing_vote is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="User has already voted in this poll"
-        )
-
-
     vote_id = await poll_repository.create_vote(
         user_id=user_id,
         poll_id=poll_id,
-        selected_option=selected_option
+        option_id=option_id
     )
+
     return {
         "vote_id": vote_id,
         "user_id": user_id,
         "poll_id": poll_id,
-        "selected_option": selected_option
+        "option_id": option_id
 
     }
 
 
 
-async def update_vote(user_id: int, poll_id: int, selected_option: int):
+async def update_vote(user_id: int, poll_id: int, option_id: int):
+    option = await poll_repository.get_option_by_id(
+        poll_id=poll_id,
+        option_id=option_id
+    )
 
-    if selected_option < 1 or selected_option > 4:
+    if option is None:
         raise HTTPException(
             status_code=400,
-            detail ="Selected option must be between 1 and 4"
+            detail="Invalid option for this poll"
         )
-
 
     is_registered = await check_user_registration(user_id)
 
@@ -186,7 +229,7 @@ async def update_vote(user_id: int, poll_id: int, selected_option: int):
     updated_vote = await poll_repository.update_vote(
         user_id=user_id,
         poll_id=poll_id,
-        selected_option=selected_option,
+        option_id=option_id
     )
 
     return dict(updated_vote)
@@ -242,16 +285,15 @@ async def get_poll_option_results(poll_id: int):
 
     results = await poll_repository.count_votes_by_option(poll_id)
 
+    options = await poll_repository.get_options_by_poll_id(poll_id)
 
     vote_counts = {
-        1: 0,
-        2: 0,
-        3: 0,
-        4: 0,
+        option["option_id"]: 0
+        for option in options
     }
 
     for result in results:
-        option = result["selected_option"]
+        option = result["option_id"]
 
         vote_counts[option] = result["vote_count"]
 
@@ -259,12 +301,17 @@ async def get_poll_option_results(poll_id: int):
 
     return {
         "poll_id": poll_id,
-        "option_1_votes": vote_counts[1],
-        "option_2_votes": vote_counts[2],
-        "option_3_votes": vote_counts[3],
-        "option_4_votes": vote_counts[4],
-        "total_votes": total_votes
+        "total_votes": total_votes,
+        "results": [
+            {
+                "option_id": option["option_id"],
+                "option_text": option["option_text"],
+                "vote_count": vote_counts[option["option_id"]]
+            }
+            for option in options
+        ]
     }
+
 
 async def get_user_vote_history(user_id: int):
 
@@ -279,8 +326,8 @@ async def get_user_vote_history(user_id: int):
     }
 
 
-async def get_all_poll_results():
 
+async def get_all_poll_results():
     polls = await get_all_polls()
 
     all_results = []
@@ -292,9 +339,10 @@ async def get_all_poll_results():
 
         all_results.append(results)
 
-        return {
-            "poll_id": poll_id,
-        }
+    return {
+        "total_polls": len(all_results),
+        "poll_results": all_results
+    }
 
 
 

@@ -1,0 +1,25 @@
+
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+
+# Environment variables and secrets
+**/.env
+**/.env.*
+
+# IDE settings
+.idea/
+
+# Local files
+*.log
+.DS_Store
+Thumbs.db
+
+# Git repository files
+.git/
+.gitignore

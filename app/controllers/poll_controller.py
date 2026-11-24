@@ -2,7 +2,7 @@
 
 
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.services import poll_service
 from app.schemas.poll_schema import PollCreate
 from app.schemas.vote_schema import VoteCreate
@@ -18,7 +18,14 @@ async def get_all_polls():
 
 @router.post("/polls", status_code=201)
 async def create_poll(poll_data: PollCreate):
-    return await poll_service.create_poll(poll_data)
+    try:
+        return await poll_service.create_poll(poll_data)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 
 @router.get("/polls/{poll_id}")
@@ -28,28 +35,37 @@ async def get_poll_by_id(poll_id: int):
 
 @router.put("/polls/{poll_id}")
 async def update_poll(poll_id: int, poll_data: PollCreate):
-    return await poll_service.update_poll(poll_id, poll_data)
+    try:
+        return await poll_service.update_poll(poll_id, poll_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 
 @router.delete("/polls/{poll_id}")
 async def delete_poll(poll_id: int):
     return await poll_service.delete_poll(poll_id)
 
+
 @router.post("/votes", status_code=201)
 async def submit_vote(vote: VoteCreate):
     return await poll_service.create_vote(
         user_id=vote.user_id,
         poll_id=vote.poll_id,
-        selected_option=vote.selected_option
+        option_id=vote.option_id
     )
 
+
 @router.put("/votes/{user_id}/{poll_id}")
-async def update_vote(user_id: int, poll_id: int, selected_option: int):
+async def update_vote(user_id: int, poll_id: int, option_id: int):
     return await poll_service.update_vote(
         user_id=user_id,
         poll_id=poll_id,
-        selected_option=selected_option
+        option_id=option_id
     )
+
 
 @router.delete("/votes/{user_id}/{poll_id}")
 async def delete_vote(user_id: int, poll_id: int):
@@ -75,7 +91,8 @@ async def get_user_vote_history(user_id: int):
 
 @router.get("/polls/results/all")
 async def get_all_poll_results():
-    return await poll_service.get_all_polls()
+    return await poll_service.get_all_poll_results()
+
 
 @router.delete("/users/{user_id}/votes")
 async def delete_all_user_votes(user_id: int):

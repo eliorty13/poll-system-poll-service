@@ -10,33 +10,34 @@ async def get_all_polls():
 
 
 
-async def create_poll(question_title, first_option, second_option, third_option, fourth_option):
-    query = """
-        INSERT INTO polls (
-            question_title,
-            first_option,
-            second_option,
-            third_option,
-            fourth_option
-        )
-        VALUES (
-            :question_title,
-            :first_option,
-            :second_option,
-            :third_option,
-            :fourth_option
-        )
-    """
+async def create_poll(question_title, options):
+    async with database.transaction():
 
-    values = {
-        "question_title": question_title,
-        "first_option": first_option,
-        "second_option": second_option,
-        "third_option": third_option,
-        "fourth_option": fourth_option
-    }
+        poll_query = """
+            INSERT INTO polls (question_title)
+            VALUES (:question_title)
+        """
 
-    return await database.execute(query=query, values=values)
+        poll_id = await database.execute(
+            query=poll_query,
+            values={"question_title": question_title}
+        )
+
+        option_query = """
+            INSERT INTO poll_options (poll_id, option_text)
+            VALUES (:poll_id, :option_text)
+        """
+
+        for option in options:
+            await database.execute(
+                query=option_query,
+                values={
+                    "poll_id": poll_id,
+                    "option_text": option
+                }
+            )
+
+        return poll_id
 
 
 
@@ -54,71 +55,125 @@ async def get_poll_by_id(poll_id: int):
     )
 
 
-
-
-async def update_poll(poll_id: int, poll_data):
+async def get_options_by_poll_id(poll_id: int):
     query = """
-        UPDATE polls
-        SET question_title = :question_title,
-            first_option = :first_option,
-            second_option = :second_option,
-            third_option = :third_option,
-            fourth_option = :fourth_option
+        SELECT option_id, option_text
+        FROM poll_options
         WHERE poll_id = :poll_id
+        ORDER BY option_id
     """
 
-    values = {
-        "poll_id": poll_id,
-        "question_title": poll_data.question_title,
-        "first_option": poll_data.first_option,
-        "second_option": poll_data.second_option,
-        "third_option": poll_data.third_option,
-        "fourth_option": poll_data.fourth_option
-    }
-
-    await database.execute(query=query, values=values)
-
-
-
-
-async def delete_poll(poll_id: int):
-    query = """
-        DELETE FROM polls
-        WHERE poll_id = :poll_id
-    """
-
-    values = {"poll_id": poll_id}
-
-    await database.execute(
+    return await database.fetch_all(
         query=query,
-        values=values
+        values={"poll_id": poll_id}
     )
 
 
-async def create_vote(user_id: int, poll_id: int, selected_option: int):
+async def get_option_by_id(poll_id: int, option_id: int):
+    query = """
+        SELECT option_id, option_text
+        FROM poll_options
+        WHERE poll_id = :poll_id
+        AND option_id = :option_id
+    """
+
+    return await database.fetch_one(
+        query=query,
+        values={
+            "poll_id": poll_id,
+            "option_id": option_id
+        }
+    )
+
+
+
+async def update_poll(poll_id: int, poll_data):
+    async with database.transaction():
+
+        question_query = """
+            UPDATE polls
+            SET question_title = :question_title
+            WHERE poll_id = :poll_id
+        """
+
+        await database.execute(
+            query=question_query,
+            values={
+                "poll_id": poll_id,
+                "question_title": poll_data.question_title
+            }
+        )
+
+        delete_query = """
+            DELETE FROM poll_options
+            WHERE poll_id = :poll_id
+        """
+
+        await database.execute(
+            query=delete_query,
+            values={"poll_id": poll_id}
+        )
+
+        insert_query = """
+            INSERT INTO poll_options (poll_id, option_text)
+            VALUES (:poll_id, :option_text)
+        """
+
+        for option in poll_data.options:
+            await database.execute(
+                query=insert_query,
+                values={
+                    "poll_id": poll_id,
+                    "option_text": option
+                }
+            )
+
+async def delete_poll(poll_id: int):
+
+    values = {"poll_id": poll_id}
+
+    async with database.transaction():
+
+        await database.execute(
+            query="DELETE FROM votes WHERE poll_id = :poll_id",
+            values=values
+        )
+
+        await database.execute(
+            query="DELETE FROM poll_options WHERE poll_id = :poll_id",
+            values=values
+        )
+
+        await database.execute(
+            query="DELETE FROM polls WHERE poll_id = :poll_id",
+            values=values
+        )
+
+
+async def create_vote(user_id: int, poll_id: int, option_id: int):
     query = """
         INSERT INTO votes (
             user_id,
             poll_id,
-            selected_option
+            option_id
         )
         VALUES (
-        :user_id,
-        :poll_id,
-        :selected_option
+            :user_id,
+            :poll_id,
+            :option_id
         )
     """
+
     values = {
         "user_id": user_id,
         "poll_id": poll_id,
-        "selected_option": selected_option
+        "option_id": option_id
     }
 
     return await database.execute(
         query=query,
         values=values
     )
-
 
 
 async def get_vote_by_user_and_poll(user_id: int, poll_id: int):
@@ -139,19 +194,19 @@ async def get_vote_by_user_and_poll(user_id: int, poll_id: int):
         values=values
     )
 
-async def update_vote(user_id: int, poll_id: int, selected_option: int):
-    query = """
-    UPDATE votes
-    SET selected_option = :selected_option
-    WHERE user_id = :user_id
-    AND poll_id = :poll_id
-    """
 
+async def update_vote(user_id: int, poll_id: int, option_id: int):
+    query = """
+        UPDATE votes
+        SET option_id = :option_id
+        WHERE user_id = :user_id
+        AND poll_id = :poll_id
+    """
 
     values = {
         "user_id": user_id,
         "poll_id": poll_id,
-        "selected_option": selected_option
+        "option_id": option_id
     }
 
     await database.execute(
@@ -204,26 +259,24 @@ async def count_votes_by_poll_id(poll_id: int):
         values={"poll_id": poll_id}
     )
 
+
 async def count_votes_by_option(poll_id: int):
     query = """
-    SELECT selected_option, COUNT(*) AS vote_count
-    FROM votes
-    WHERE poll_id = :poll_id
-    GROUP BY selected_option
-    ORDER BY selected_option
+        SELECT option_id, COUNT(*) AS vote_count
+        FROM votes
+        WHERE poll_id = :poll_id
+        GROUP BY option_id
     """
 
-    results = await database.fetch_all(
+    return await database.fetch_all(
         query=query,
         values={"poll_id": poll_id}
     )
 
-    return [dict(row) for row in results]
-
 
 async def get_votes_by_user_id(user_id: int):
     query = """
-    SELECT vote_id, poll_id, selected_option
+    SELECT vote_id, poll_id, option_id
     FROM votes
     WHERE user_id = :user_id
     ORDER BY poll_id
